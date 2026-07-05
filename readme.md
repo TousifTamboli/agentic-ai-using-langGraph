@@ -1,112 +1,313 @@
-That's a good use case for LangGraph. You should **not** ask the LLM to "append to a variable." Instead, make the LLM return structured data, and let your node store it in the graph state.
+There are several ways to compare keywords in Python, ranging from simple string matching to semantic similarity. For an ATS project, I recommend combining multiple techniques instead of relying on just one.
 
-### 1. Define your state
+---
+
+# 1. Exact Match (Fastest)
+
+Best for identical keywords.
 
 ```python
-from typing_extensions import TypedDict
+resume = {"Python", "Docker", "FastAPI"}
+jd = {"Python", "Docker", "MongoDB"}
 
-class GraphState(TypedDict):
-    resume_code: str
-    keywords: list[str]
+matched = resume & jd
+
+print(matched)
+```
+
+Output:
+
+```python
+{"Python", "Docker"}
+```
+
+**Pros**
+
+* Very fast
+* No dependencies
+
+**Cons**
+
+* Doesn't match:
+
+  * REST API ↔ REST APIs
+  * React ↔ React.js
+
+---
+
+# 2. Normalize + Exact Match ⭐ (Recommended)
+
+Normalize before comparing.
+
+```python
+def normalize(keyword):
+    return keyword.lower().replace(".", "").strip()
+
+resume = {normalize(k) for k in resume_keywords}
+jd = {normalize(k) for k in jd_keywords}
+
+matched = resume & jd
+```
+
+Now
+
+```
+React
+React.js
+react
+```
+
+all become
+
+```
+reactjs
 ```
 
 ---
 
-### 2. Define the output schema
+# 3. Fuzzy Matching
 
-Using Pydantic ensures the LLM returns exactly what you want.
+Good for wording differences.
+
+Examples
+
+```
+REST API
+REST APIs
+
+Docker
+Dockerization
+
+Micro-service
+Microservices
+```
+
+Library:
+
+```bash
+pip install rapidfuzz
+```
 
 ```python
-from pydantic import BaseModel
+from rapidfuzz import fuzz
 
-class KeywordOutput(BaseModel):
-    keywords: list[str]
+score = fuzz.ratio("REST API", "REST APIs")
+
+print(score)
+```
+
+Output
+
+```
+94
+```
+
+Use
+
+```python
+if score > 90:
+    match
 ```
 
 ---
 
-### 3. Create a structured LLM
+# 4. Embeddings ⭐⭐⭐ (Best for intent)
+
+This is how semantic search works.
+
+Example
+
+```
+Node.js
+Backend Development
+
+JWT
+Authentication
+
+Docker
+Containerization
+
+REST API
+HTTP API
+```
+
+Using Sentence Transformers
+
+```bash
+pip install sentence-transformers
+```
 
 ```python
-structured_llm = llm.with_structured_output(KeywordOutput)
+from sentence_transformers import SentenceTransformer
+
+model = SentenceTransformer("all-MiniLM-L6-v2")
 ```
+
+Encode
+
+```python
+emb1 = model.encode("Docker")
+emb2 = model.encode("Containerization")
+```
+
+Compare
+
+```python
+from sklearn.metrics.pairwise import cosine_similarity
+
+similarity = cosine_similarity(
+    [emb1],
+    [emb2]
+)
+
+print(similarity)
+```
+
+Output
+
+```
+0.91
+```
+
+Much better than fuzzy matching.
 
 ---
 
-### 4. Write the extraction node
+# 5. Synonym Dictionary ⭐⭐⭐
+
+Very common in ATS systems.
 
 ```python
-def extract_keywords(state: GraphState):
-    prompt = f"""
-    You are an ATS keyword extractor.
-
-    Given the following LaTeX resume project, extract all important technical
-    keywords, skills, technologies, frameworks, programming languages,
-    tools, APIs, and concepts.
-
-    Return only the extracted keywords.
-
-    Resume:
-    {state["resume_code"]}
-    """
-
-    result = structured_llm.invoke(prompt)
-
-    return {
-        "keywords": result.keywords
-    }
-```
-
----
-
-### 5. Example
-
-Input:
-
-```python
-state = {
-    "resume_code": resume_code
-}
-```
-
-Output state:
-
-```python
-{
-    "resume_code": "...latex...",
-    "keywords": [
-        "React.js",
-        "Python",
-        "FastAPI",
-        "LangChain",
-        "OpenAI",
-        "HuggingFace Embeddings",
-        "Docker",
-        "RAG",
-        "YouTube Transcript API",
-        "Conversational AI"
+SYNONYMS = {
+    "react": ["react.js", "reactjs"],
+    "jwt": ["jwt authentication"],
+    "rbac": ["role based access control"],
+    "rest api": ["rest apis"],
+    "ci/cd": [
+        "continuous integration",
+        "continuous deployment"
     ]
 }
 ```
 
----
-
-### Why this is the recommended LangGraph approach
-
-Instead of asking the model to produce formatted text like:
-
-```
-- React.js
-- Python
-- Docker
-```
-
-you ask it to produce a structured object. LangGraph can then directly update the state with:
+Then
 
 ```python
-{
-    "keywords": result.keywords
-}
+def are_same(a, b):
+    ...
 ```
 
-This avoids parsing text and makes your graph more reliable and easier to maintain.
+This is deterministic.
+
+---
+
+# 6. Taxonomy Matching ⭐⭐⭐
+
+Instead of synonyms
+
+```
+Backend
+
+├── Node.js
+├── Express
+├── FastAPI
+├── Django
+```
+
+```
+DevOps
+
+├── Docker
+├── Kubernetes
+├── GitHub Actions
+```
+
+Now
+
+```
+Docker
+```
+
+can contribute to
+
+```
+DevOps
+```
+
+without claiming they are identical.
+
+---
+
+# 7. LLM Matching
+
+Exactly what you're doing now.
+
+Prompt
+
+```
+Compare these keywords semantically.
+```
+
+Pros
+
+* understands intent
+* understands wording
+* understands abbreviations
+
+Cons
+
+* expensive
+* slower
+* nondeterministic
+
+---
+
+# 8. Hybrid (Recommended)
+
+For ATS systems, I recommend this pipeline:
+
+```
+Resume Keywords
+          │
+          ▼
+Normalize
+          │
+          ▼
+Exact Match
+          │
+     Remaining
+          │
+          ▼
+Synonym Dictionary
+          │
+     Remaining
+          │
+          ▼
+Embeddings
+          │
+     Remaining
+          │
+          ▼
+LLM (only if needed)
+```
+
+This gives you:
+
+* **Fast** exact matches.
+* **Deterministic** synonym handling.
+* **Semantic** matching via embeddings.
+* **Flexible** LLM fallback for edge cases.
+
+---
+
+## My recommendation for your LangGraph ATS project
+
+Since you're building an ATS analyzer, I'd use:
+
+1. **Normalize keywords** (lowercase, remove punctuation, standardize common variants).
+2. **Exact match** for identical keywords.
+3. **Synonym dictionary** for known ATS equivalents (e.g., `JWT` ↔ `JWT Authentication`, `REST API` ↔ `REST APIs`).
+4. **Sentence embeddings** (e.g., `all-MiniLM-L6-v2`) with cosine similarity to catch semantic matches like `Containerization` ↔ `Docker` or `Backend Development` ↔ `Server-side Development`.
+5. Use the **LLM only** to explain why keywords matched or to generate resume improvement suggestions, rather than for the core matching logic.
+
+This hybrid approach is faster, more reproducible, and easier to test than relying entirely on an LLM for keyword comparison.
