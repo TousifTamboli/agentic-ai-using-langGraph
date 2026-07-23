@@ -3,6 +3,11 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+# JavaScript / Next.js
+node_modules/
+.next/
+out/
+
 # C extensions
 *.so
 
@@ -15,6 +20,8 @@ downloads/
 eggs/
 .eggs/
 lib/
+!langgraph-chatbot-nextjs/frontend/src/lib/
+!langgraph-chatbot-nextjs/frontend/src/lib/**
 lib64/
 parts/
 sdist/
@@ -61,6 +68,8 @@ cover/
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
+langgraph-chatbot-nextjs/*.db
+langgraph-chatbot-nextjs/*.db-*
 
 # Flask stuff:
 instance/
