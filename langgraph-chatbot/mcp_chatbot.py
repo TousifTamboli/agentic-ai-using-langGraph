@@ -90,7 +90,7 @@ def build_graph():
     return chatbot
 
 async def main():
-    chatbot = build_graph()
+    chatbot = await build_graph()
 
     results = await chatbot.ainvoke({"messages": [HumanMessage(content="Tell me about Modi in detail")]});
     print(results['messages'][-1].content);
